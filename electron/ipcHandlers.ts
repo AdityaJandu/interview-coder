@@ -460,12 +460,56 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     }
   })
 
-  // Event listeners for conversation events
+  // ============================================
+  // Conversation EventEmitter → IPC bridge
+  // ============================================
+
   if (deps.conversationManager) {
-    deps.conversationManager.on('message-added', (message) => {
+    // Forward every new message to the renderer so the UI stays in sync.
+    deps.conversationManager.on('message-added', async (message) => {
       const mainWindow = deps.getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('conversation-message-added', message);
+      const windowAlive = mainWindow && !mainWindow.isDestroyed();
+
+      // Always push the raw message to the frontend first.
+      if (windowAlive) {
+        mainWindow!.webContents.send('conversation-message-added', message);
+      }
+
+      // ── AI suggestion pipeline ──────────────────────────────────────────
+      // Only trigger for interviewer messages and only when both helpers exist.
+      if (
+        message.speaker !== 'interviewer' ||
+        !deps.answerAssistant ||
+        !deps.conversationManager
+      ) {
+        return;
+      }
+
+      // Re-acquire a fresh mainWindow reference at pipeline start so it
+      // is as up-to-date as possible for each send() call below.
+      const sendToRenderer = (channel: string, payload?: unknown): void => {
+        const win = deps.getMainWindow();
+        if (win && !win.isDestroyed()) {
+          win.webContents.send(channel, payload);
+        }
+      };
+
+      sendToRenderer('suggestion-loading', true);
+
+      try {
+        const suggestion = await deps.answerAssistant!.generateAnswerSuggestions(
+          message.text,
+          deps.conversationManager!
+        );
+        sendToRenderer('suggestion-received', suggestion);
+      } catch (error: any) {
+        console.error('[ipcHandlers] AnswerAssistant error:', error);
+        sendToRenderer(
+          'suggestion-error',
+          error?.message ?? 'An unexpected error occurred while generating suggestions.'
+        );
+      } finally {
+        sendToRenderer('suggestion-loading', false);
       }
     });
 

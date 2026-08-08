@@ -58,6 +58,7 @@ export const ConversationSection: React.FC = () => {
   const [currentSpeaker, setCurrentSpeaker] = useState<'interviewer' | 'interviewee'>('interviewee');
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [tooltipHeight, setTooltipHeight] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -127,6 +128,38 @@ export const ConversationSection: React.FC = () => {
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
       }
+    };
+  }, []);
+
+  // ── Listen for push-based AI suggestion events from the main process ────
+  // The main process automatically triggers AnswerAssistant whenever an
+  // interviewer message is added via ConversationManager, so we just need
+  // to listen here and update local state accordingly.
+  useEffect(() => {
+    const unsubscribeLoading = window.electronAPI.onSuggestionLoading((isLoading: boolean) => {
+      setIsProcessing(isLoading);
+      if (isLoading) {
+        // Clear stale error/suggestions while a new request is in-flight.
+        setSuggestionError(null);
+      }
+    });
+
+    const unsubscribeReceived = window.electronAPI.onSuggestionReceived(
+      (suggestion: { suggestions: string[]; reasoning: string }) => {
+        setAiSuggestions(suggestion);
+        setSuggestionError(null);
+      }
+    );
+
+    const unsubscribeError = window.electronAPI.onSuggestionError((errorMessage: string) => {
+      console.error('[ConversationSection] Suggestion error from main process:', errorMessage);
+      setSuggestionError(errorMessage);
+    });
+
+    return () => {
+      unsubscribeLoading();
+      unsubscribeReceived();
+      unsubscribeError();
     };
   }, []);
 
@@ -300,29 +333,32 @@ export const ConversationSection: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Conversation Commands Bar - Matches QueueCommands/SolutionCommands style */}
-      <ConversationCommands
-        onTooltipVisibilityChange={handleTooltipVisibilityChange}
-        isRecording={isRecording}
-        isProcessing={isProcessing}
-        recordingDuration={recordingDuration}
-        currentSpeaker={currentSpeaker}
-        onStartRecording={handleStartRecording}
-        onStopRecording={handleStopRecording}
-        onToggleSpeaker={handleToggleSpeaker}
-        onClearConversation={handleClearConversation}
-      />
+      {/* ── Top Bar: recording controls — always pinned, never shrinks ── */}
+      <div className="shrink-0">
+        <ConversationCommands
+          onTooltipVisibilityChange={handleTooltipVisibilityChange}
+          isRecording={isRecording}
+          isProcessing={isProcessing}
+          recordingDuration={recordingDuration}
+          currentSpeaker={currentSpeaker}
+          onStartRecording={handleStartRecording}
+          onStopRecording={handleStopRecording}
+          onToggleSpeaker={handleToggleSpeaker}
+          onClearConversation={handleClearConversation}
+        />
+      </div>
 
-      {/* Scrollable Conversation Area - Takes remaining space above AI suggestions */}
-      <div 
-        className="overflow-y-auto flex-1 min-h-0 mb-3 pr-2 mt-2"
-        style={{ 
-          maxHeight: aiSuggestions 
-            ? `calc(100% - ${180 + tooltipHeight}px)` 
-            : `calc(100% - ${60 + tooltipHeight}px)`,
-          scrollBehavior: 'smooth'
-        }}
+      {/* ── Unified scrollable body: messages + suggestions scroll together ──
+           flex-1      → fills all remaining height below the toolbar
+           min-h-0     → lets the div shrink below its content height so
+                         overflow-y-auto actually activates inside a flex col
+           overflow-y-auto → the one scroll container for everything
+           pr-2        → keeps content clear of the scrollbar track          ── */}
+      <div
+        className="flex-1 min-h-0 overflow-y-auto pr-2 mt-2"
+        style={{ scrollBehavior: 'smooth' }}
       >
+        {/* Conversation messages */}
         {messages.length > 0 && (
           <ContentSection
             title="Conversation"
@@ -357,16 +393,22 @@ export const ConversationSection: React.FC = () => {
             isLoading={false}
           />
         )}
-        <div ref={messagesEndRef} />
-      </div>
 
-      {/* AI Suggestions - Fixed at bottom, always visible, never scrolls */}
-      {aiSuggestions && (
-        <div className="flex-shrink-0 border-t border-white/10 pt-3 bg-black/60 -mx-4 -mb-4 px-4 pb-4">
-          <ContentSection
-            title="🤖 AI Answer Suggestions"
-            content={
-              <div className="space-y-3">
+        {/* Error banner — inline, scrolls with the rest */}
+        {suggestionError && (
+          <div className="border-t border-red-500/30 mt-3 pt-2 pb-1">
+            <p className="text-xs text-red-400">
+              ⚠️ Could not generate suggestions: {suggestionError}
+            </p>
+          </div>
+        )}
+
+        {/* AI suggestions — inline, scrolls with the rest */}
+        {aiSuggestions && !suggestionError && (
+          <div className="border-t border-white/10 mt-3 pt-3 pb-2">
+            <ContentSection
+              title="🤖 AI Answer Suggestions"
+              content={
                 <div className="space-y-1">
                   {aiSuggestions.suggestions.map((suggestion, index) => (
                     <div key={index} className="flex items-start gap-2">
@@ -377,12 +419,16 @@ export const ConversationSection: React.FC = () => {
                     </div>
                   ))}
                 </div>
-              </div>
-            }
-            isLoading={false}
-          />
-        </div>
-      )}
+              }
+              isLoading={false}
+            />
+          </div>
+        )}
+
+        {/* Sentinel — at the very bottom so auto-scroll lands after suggestions */}
+        <div ref={messagesEndRef} />
+      </div>
     </div>
   );
 };
+

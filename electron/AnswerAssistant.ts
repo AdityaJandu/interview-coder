@@ -139,8 +139,29 @@ export class AnswerAssistant implements IAnswerAssistant {
     try {
       let suggestionsText = '';
       
-      // Get the configured answer model, fallback to default if not set
-      const answerModel = config.answerModel || DEFAULT_ANSWER_MODELS[config.apiProvider];
+      // Resolve the answer model with provider-mismatch safety checks.
+      // A mismatch can occur when the user switches providers but the
+      // previously-saved model string still belongs to the old provider.
+      const configuredModel = config.answerModel || DEFAULT_ANSWER_MODELS[config.apiProvider];
+      const provider = config.apiProvider;
+
+      const isMismatch =
+        (provider === 'openai'    && (/gemini|claude/i.test(configuredModel))) ||
+        (provider === 'gemini'    && (/gpt|claude/i.test(configuredModel)))    ||
+        (provider === 'anthropic' && (/gpt|gemini/i.test(configuredModel)));
+
+      let answerModel: string;
+      if (isMismatch) {
+        const fallback = DEFAULT_ANSWER_MODELS[provider];
+        console.warn(
+          `[AnswerAssistant] Model/provider mismatch detected: ` +
+          `provider="${provider}" but answerModel="${configuredModel}". ` +
+          `Falling back to default model "${fallback}".`
+        );
+        answerModel = fallback;
+      } else {
+        answerModel = configuredModel;
+      }
 
       if (config.apiProvider === "openai" && this.openai) {
         const response = await this.openai.chat.completions.create({

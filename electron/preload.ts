@@ -290,6 +290,38 @@ const electronAPI = {
     return () => {
       ipcRenderer.removeListener("conversation-cleared", subscription)
     }
+  },
+
+  // ── AI suggestion push events ────────────────────────────────────────────
+  // Emitted by the main process whenever the AnswerAssistant pipeline runs
+  // automatically in response to a new interviewer message.
+
+  /** `isLoading` is `true` when the AI call starts and `false` when it ends. */
+  onSuggestionLoading: (callback: (isLoading: boolean) => void) => {
+    const subscription = (_: any, isLoading: boolean) => callback(isLoading)
+    ipcRenderer.on("suggestion-loading", subscription)
+    return () => {
+      ipcRenderer.removeListener("suggestion-loading", subscription)
+    }
+  },
+
+  /** Called with the full `AnswerSuggestion` payload on a successful AI response. */
+  onSuggestionReceived: (callback: (suggestion: { suggestions: string[]; reasoning: string }) => void) => {
+    const subscription = (_: any, suggestion: { suggestions: string[]; reasoning: string }) =>
+      callback(suggestion)
+    ipcRenderer.on("suggestion-received", subscription)
+    return () => {
+      ipcRenderer.removeListener("suggestion-received", subscription)
+    }
+  },
+
+  /** Called with an error message string when the AI pipeline fails. */
+  onSuggestionError: (callback: (errorMessage: string) => void) => {
+    const subscription = (_: any, errorMessage: string) => callback(errorMessage)
+    ipcRenderer.on("suggestion-error", subscription)
+    return () => {
+      ipcRenderer.removeListener("suggestion-error", subscription)
+    }
   }
 }
 
