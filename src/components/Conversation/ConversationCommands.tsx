@@ -12,9 +12,11 @@ interface ConversationCommandsProps {
   isProcessing: boolean;
   recordingDuration: number;
   currentSpeaker: 'interviewer' | 'interviewee';
+  isMuted: boolean;
   onStartRecording: () => Promise<void>;
   onStopRecording: () => Promise<void>;
   onToggleSpeaker: () => Promise<void>;
+  onToggleMute: () => Promise<void>;
   onClearConversation: () => Promise<void>;
 }
 
@@ -24,9 +26,11 @@ export const ConversationCommands: React.FC<ConversationCommandsProps> = ({
   isProcessing,
   recordingDuration,
   currentSpeaker,
+  isMuted,
   onStartRecording,
   onStopRecording,
   onToggleSpeaker,
+  onToggleMute,
   onClearConversation,
 }) => {
   const [isTooltipVisible, setIsTooltipVisible] = useState(false);
@@ -89,7 +93,7 @@ export const ConversationCommands: React.FC<ConversationCommandsProps> = ({
           <div
             className="flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={onToggleSpeaker}
-            style={{ opacity: isRecording ? 0.5 : 1, pointerEvents: isRecording ? 'none' : 'auto' }}
+            style={{ opacity: isRecording || isMuted ? 0.5 : 1, pointerEvents: isRecording || isMuted ? 'none' : 'auto' }}
           >
             <span className="text-[11px] leading-none">
               {currentSpeaker === 'interviewer' ? 'Interviewer' : 'You'}
@@ -105,6 +109,20 @@ export const ConversationCommands: React.FC<ConversationCommandsProps> = ({
                 M
               </button>
             </div>
+          </div>
+
+          {/* Mute My Voice / Interviewer Only */}
+          <div
+            className={`flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 transition-colors ${isMuted
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              : 'hover:bg-white/10 text-white/90'
+              }`}
+            onClick={onToggleMute}
+            title="Mute My Voice (Interviewer Only Mode)"
+          >
+            <span className="text-[11px] leading-none font-medium">
+              {isMuted ? '🔇 Interviewer Only' : '🎤 Mute My Voice'}
+            </span>
           </div>
 
           {/* Clear Conversation */}
@@ -180,6 +198,22 @@ export const ConversationCommands: React.FC<ConversationCommandsProps> = ({
                         </div>
                         <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
                           Switch between Interviewer and You mode.
+                        </p>
+                      </div>
+
+                      {/* Mute My Voice */}
+                      <div
+                        className="cursor-pointer rounded px-2 py-1 hover:bg-white/10 transition-colors"
+                        onClick={onToggleMute}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate">Mute My Voice</span>
+                          <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            Click Toggle
+                          </span>
+                        </div>
+                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                          Isolate audio to Interviewer only (mute mic).
                         </p>
                       </div>
                     </div>

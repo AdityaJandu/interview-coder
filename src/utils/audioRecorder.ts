@@ -6,6 +6,7 @@ export interface IAudioRecorder {
   startRecording(): Promise<void>;
   stopRecording(): Promise<Blob>;
   getIsRecording(): boolean;
+  getCurrentBuffer(): Blob | null;
 }
 
 export class AudioRecorder implements IAudioRecorder {
@@ -20,28 +21,32 @@ export class AudioRecorder implements IAudioRecorder {
    */
   async startRecording(): Promise<void> {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 16000, // Whisper prefers 16kHz
           channelCount: 1,   // Mono
           echoCancellation: true,
           noiseSuppression: true,
-        } 
+        }
       });
-      
+
       this.stream = stream;
       this.audioChunks = [];
-      
+
       // Use WebM format (works everywhere)
       const options = { mimeType: 'audio/webm;codecs=opus' };
       this.mediaRecorder = new MediaRecorder(stream, options);
-      
+
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           this.audioChunks.push(event.data);
+          // Keep only the last 60 chunks (60 seconds)
+          if (this.audioChunks.length > 60) {
+            this.audioChunks.shift();
+          }
         }
       };
-      
+
       this.mediaRecorder.start(1000); // Collect data every second
       this.isRecording = true;
     } catch (error) {
@@ -76,6 +81,16 @@ export class AudioRecorder implements IAudioRecorder {
       this.mediaRecorder.stop();
       this.isRecording = false;
     });
+  }
+
+  /**
+   * Gets the current buffer as a single Blob without stopping the recording
+   */
+  getCurrentBuffer(): Blob | null {
+    if (this.audioChunks.length === 0) {
+      return null;
+    }
+    return new Blob(this.audioChunks, { type: 'audio/webm' });
   }
 
   /**
