@@ -57,7 +57,7 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
 
     // Force initial dimension update immediately
     updateDimensions()
-    
+
     // Set a fallback timer to ensure dimensions are set even if content isn't fully loaded
     const fallbackTimer = setTimeout(() => {
       window.electronAPI?.updateContentDimensions({ width: 800, height: 600 })

@@ -470,8 +470,8 @@ export const ConversationSection: React.FC = () => {
               onClick={handleTriggerAnswerNow}
               disabled={isProcessing}
               className={`text-[13px] font-medium px-4 py-1.5 rounded-md shadow-md flex items-center gap-2 transition-all border ${isProcessing
-                  ? 'bg-gray-800 border-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-purple-600/30 hover:bg-purple-600/50 border-purple-500/50 text-white shadow-purple-500/20'
+                ? 'bg-gray-800 border-gray-600 text-gray-400 cursor-not-allowed'
+                : 'bg-purple-600/30 hover:bg-purple-600/50 border-purple-500/50 text-white shadow-purple-500/20'
                 }`}
             >
               <span className={!isProcessing ? "animate-pulse" : ""}>✨</span>
@@ -494,8 +494,8 @@ export const ConversationSection: React.FC = () => {
                   >
                     <div
                       className={`max-w-[80%] rounded-lg p-2.5 ${message.speaker === 'interviewer'
-                          ? 'bg-blue-600/20 border border-blue-500/30'
-                          : 'bg-green-600/20 border border-green-500/30'
+                        ? 'bg-blue-600/20 border border-blue-500/30'
+                        : 'bg-green-600/20 border border-green-500/30'
                         }`}
                     >
                       <div className="text-xs text-white/60 mb-1">
@@ -513,8 +513,8 @@ export const ConversationSection: React.FC = () => {
                   <div className={`flex flex-col ${(isMuted || processSpeakerRef.current === 'interviewer') ? 'items-start' : 'items-end'}`}>
                     <div
                       className={`max-w-[80%] rounded-lg p-2.5 ${(isMuted || processSpeakerRef.current === 'interviewer')
-                          ? 'bg-blue-600/10 border border-blue-500/20 border-dashed'
-                          : 'bg-green-600/10 border border-green-500/20 border-dashed'
+                        ? 'bg-blue-600/10 border border-blue-500/20 border-dashed'
+                        : 'bg-green-600/10 border border-green-500/20 border-dashed'
                         }`}
                     >
                       <div className="text-xs text-white/60 mb-1 flex items-center gap-1.5">

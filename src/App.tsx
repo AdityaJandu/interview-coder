@@ -17,9 +17,9 @@ import { WelcomeScreen } from "./components/WelcomeScreen"
 
 // Lazy load heavy components for better code splitting
 const SubscribedApp = lazy(() => import("./_pages/SubscribedApp"))
-const SettingsDialog = lazy(() => 
-  import("./components/Settings/SettingsDialog").then(module => ({ 
-    default: module.SettingsDialog 
+const SettingsDialog = lazy(() =>
+  import("./components/Settings/SettingsDialog").then(module => ({
+    default: module.SettingsDialog
   }))
 )
 
@@ -96,7 +96,7 @@ function App() {
       try {
         const hasKey = await window.electronAPI.checkApiKey()
         setHasApiKey(hasKey)
-        
+
         // If no API key is found, show the settings dialog after a short delay
         if (!hasKey) {
           setTimeout(() => {
@@ -107,7 +107,7 @@ function App() {
         console.error("Failed to check API key:", error)
       }
     }
-    
+
     if (isInitialized) {
       checkApiKey()
     }
@@ -121,12 +121,12 @@ function App() {
         // Find both native select elements and custom dropdowns
         const selectElements = document.querySelectorAll('select');
         const customDropdowns = document.querySelectorAll('.dropdown-trigger, [role="combobox"], button:has(.dropdown)');
-        
+
         // Enable native selects
         selectElements.forEach(dropdown => {
           dropdown.disabled = false;
         });
-        
+
         // Enable custom dropdowns by removing any disabled attributes
         customDropdowns.forEach(dropdown => {
           if (dropdown instanceof HTMLElement) {
@@ -134,10 +134,10 @@ function App() {
             dropdown.setAttribute('aria-disabled', 'false');
           }
         });
-        
+
         console.log(`Enabled ${selectElements.length} select elements and ${customDropdowns.length} custom dropdowns`);
       }, 1000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [isInitialized]);
@@ -148,7 +148,7 @@ function App() {
       console.log("Show settings dialog requested");
       setIsSettingsOpen(true);
     });
-    
+
     return () => {
       unsubscribeSettings();
     };
@@ -161,20 +161,20 @@ function App() {
       try {
         // Set unlimited credits
         updateCredits()
-        
+
         // Load config including language and model settings
         const config = await window.electronAPI.getConfig()
-        
+
         // Load language preference
         if (config && config.language) {
           updateLanguage(config.language)
         } else {
           updateLanguage("python")
         }
-        
+
         // Model settings are now managed through the settings dialog
         // and stored in config as extractionModel, solutionModel, and debuggingModel
-        
+
         markInitialized()
       } catch (error) {
         console.error("Failed to initialize app:", error)
@@ -183,7 +183,7 @@ function App() {
         markInitialized()
       }
     }
-    
+
     initializeApp()
 
     // Event listeners for process events
@@ -221,7 +221,7 @@ function App() {
     console.log('Opening settings dialog');
     setIsSettingsOpen(true);
   }, []);
-  
+
   const handleCloseSettings = useCallback((open: boolean) => {
     console.log('Settings dialog state changed:', open);
     setIsSettingsOpen(open);
@@ -232,7 +232,7 @@ function App() {
       await window.electronAPI.updateConfig({ apiKey })
       setHasApiKey(true)
       showToast("Success", "API key saved successfully", "success")
-      
+
       // Reload app after a short delay to reinitialize with the new API key
       setTimeout(() => {
         window.location.reload()
@@ -281,17 +281,17 @@ function App() {
             )}
             <UpdateNotification />
           </div>
-          
+
           {/* Settings Dialog - Lazy loaded */}
           {isSettingsOpen && (
             <Suspense fallback={null}>
-              <SettingsDialog 
-                open={isSettingsOpen} 
-                onOpenChange={handleCloseSettings} 
+              <SettingsDialog
+                open={isSettingsOpen}
+                onOpenChange={handleCloseSettings}
               />
             </Suspense>
           )}
-          
+
           <Toast
             open={toastState.open}
             onOpenChange={(open) =>

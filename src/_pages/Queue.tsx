@@ -136,7 +136,7 @@ const Queue: React.FC<QueueProps> = ({
   const handleOpenSettings = () => {
     window.electronAPI.openSettingsPortal();
   };
-  
+
   return (
     <div ref={contentRef} className={`bg-transparent w-full flex-1 min-h-0 flex flex-col overflow-hidden`}>
       <div className="flex-1 min-h-0 overflow-y-auto scroll-smooth px-4 py-3">
