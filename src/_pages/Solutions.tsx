@@ -46,6 +46,38 @@ export const ContentSection = ({
     )}
   </div>
 )
+
+// Answer-only view for MCQs: no code block, no complexity analysis - just
+// the correct option, front and center. Kept visually distinct (a single
+// highlighted card) so it doesn't look like a truncated/broken solution.
+export const MCQAnswerSection = ({
+  answer,
+  isLoading
+}: {
+  answer: string | null
+  isLoading: boolean
+}) => (
+  <div className="space-y-2">
+    <h2 className="text-[13px] font-medium text-white tracking-wide">
+      Answer
+    </h2>
+    {isLoading ? (
+      <div className="mt-4 flex">
+        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+          Determining the correct answer...
+        </p>
+      </div>
+    ) : (
+      <div className="text-[14px] leading-[1.4] text-gray-100 bg-white/5 border border-white/10 rounded-md p-3 max-w-[600px]">
+        <div className="flex items-start gap-2">
+          <div className="w-1 h-1 rounded-full bg-green-400/80 mt-2 shrink-0" />
+          <div className="font-medium">{answer}</div>
+        </div>
+      </div>
+    )}
+  </div>
+)
+
 const SolutionSection = ({
   title,
   content,
@@ -187,6 +219,18 @@ export interface SolutionsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
 }
+
+// Shape of the data ProcessingHelper sends on SOLUTION_SUCCESS. `is_mcq`
+// and `mcq_answer` are only present for the MCQ answer-only path.
+interface SolutionSuccessData {
+  code: string
+  thoughts: string[]
+  time_complexity: string
+  space_complexity: string
+  is_mcq?: boolean
+  mcq_answer?: string
+}
+
 const Solutions: React.FC<SolutionsProps> = ({
   setView,
   credits,
@@ -207,6 +251,11 @@ const Solutions: React.FC<SolutionsProps> = ({
   const [spaceComplexityData, setSpaceComplexityData] = useState<string | null>(
     null
   )
+  // Track whether the current result is an MCQ answer-only result, and
+  // hold the answer text separately from `solutionData` (which is treated
+  // as code elsewhere, e.g. passed straight into the syntax highlighter).
+  const [isMCQ, setIsMCQ] = useState(false)
+  const [mcqAnswerData, setMcqAnswerData] = useState<string | null>(null)
 
   const [isResetting, setIsResetting] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -333,6 +382,8 @@ const Solutions: React.FC<SolutionsProps> = ({
         setThoughtsData(null)
         setTimeComplexityData(null)
         setSpaceComplexityData(null)
+        setIsMCQ(false)
+        setMcqAnswerData(null)
       }),
       window.electronAPI.onProblemExtracted((data: ProblemStatementData) => {
         queryClient.setQueryData(["problem_statement"], data)
@@ -341,12 +392,7 @@ const Solutions: React.FC<SolutionsProps> = ({
       window.electronAPI.onSolutionError((error: string) => {
         showToast("Processing Failed", error, "error")
         // Reset solutions in the cache (even though this shouldn't ever happen) and complexities to previous states
-        const solution = queryClient.getQueryData(["solution"]) as {
-          code: string
-          thoughts: string[]
-          time_complexity: string
-          space_complexity: string
-        } | null
+        const solution = queryClient.getQueryData(["solution"]) as SolutionSuccessData | null
         if (!solution) {
           setView("queue")
         }
@@ -354,20 +400,24 @@ const Solutions: React.FC<SolutionsProps> = ({
         setThoughtsData(solution?.thoughts || null)
         setTimeComplexityData(solution?.time_complexity || null)
         setSpaceComplexityData(solution?.space_complexity || null)
+        setIsMCQ(solution?.is_mcq || false)
+        setMcqAnswerData(solution?.mcq_answer || null)
         console.error("Processing error:", error)
       }),
       //when the initial solution is generated, we'll set the solution data to that
-      window.electronAPI.onSolutionSuccess((data: { code: string; thoughts: string[]; time_complexity: string; space_complexity: string }) => {
+      window.electronAPI.onSolutionSuccess((data: SolutionSuccessData) => {
         if (!data) {
           console.warn("Received empty or invalid solution data")
           return
         }
         console.log({ data })
-        const solutionData = {
+        const solutionData: SolutionSuccessData = {
           code: data.code,
           thoughts: data.thoughts,
           time_complexity: data.time_complexity,
-          space_complexity: data.space_complexity
+          space_complexity: data.space_complexity,
+          is_mcq: data.is_mcq,
+          mcq_answer: data.mcq_answer
         }
 
         queryClient.setQueryData(["solution"], solutionData)
@@ -375,6 +425,8 @@ const Solutions: React.FC<SolutionsProps> = ({
         setThoughtsData(solutionData.thoughts || null)
         setTimeComplexityData(solutionData.time_complexity || null)
         setSpaceComplexityData(solutionData.space_complexity || null)
+        setIsMCQ(solutionData.is_mcq || false)
+        setMcqAnswerData(solutionData.mcq_answer || null)
 
         // Fetch latest screenshots when solution is successful
         const fetchScreenshots = async () => {
@@ -436,7 +488,10 @@ const Solutions: React.FC<SolutionsProps> = ({
     setProblemStatementData(
       queryClient.getQueryData(["problem_statement"]) || null
     )
-    setSolutionData(queryClient.getQueryData(["solution"]) || null)
+    const cachedSolution = queryClient.getQueryData(["solution"]) as SolutionSuccessData | null
+    setSolutionData(cachedSolution?.code ?? null)
+    setIsMCQ(cachedSolution?.is_mcq || false)
+    setMcqAnswerData(cachedSolution?.mcq_answer || null)
 
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       if (event?.query.queryKey[0] === "problem_statement") {
@@ -445,17 +500,14 @@ const Solutions: React.FC<SolutionsProps> = ({
         )
       }
       if (event?.query.queryKey[0] === "solution") {
-        const solution = queryClient.getQueryData(["solution"]) as {
-          code: string
-          thoughts: string[]
-          time_complexity: string
-          space_complexity: string
-        } | null
+        const solution = queryClient.getQueryData(["solution"]) as SolutionSuccessData | null
 
         setSolutionData(solution?.code ?? null)
         setThoughtsData(solution?.thoughts ?? null)
         setTimeComplexityData(solution?.time_complexity ?? null)
         setSpaceComplexityData(solution?.space_complexity ?? null)
+        setIsMCQ(solution?.is_mcq || false)
+        setMcqAnswerData(solution?.mcq_answer || null)
       }
     })
     return () => unsubscribe()
@@ -492,6 +544,11 @@ const Solutions: React.FC<SolutionsProps> = ({
     }
   }
 
+  // For the MCQ path, "has a result" means we have an answer string rather
+  // than code - `solutionData` (code) stays empty in that case, so use it
+  // to decide whether we're still loading vs. done.
+  const hasResult = isMCQ ? !!mcqAnswerData : !!solutionData
+
   return (
     <>
       {!isResetting && queryClient.getQueryData(["new_solution"]) ? (
@@ -504,8 +561,8 @@ const Solutions: React.FC<SolutionsProps> = ({
       ) : (
         <div ref={contentRef} className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="flex-1 min-h-0 overflow-y-auto scroll-smooth space-y-3 px-4 py-3">
-            {/* Conditionally render the screenshot queue if solutionData is available */}
-            {solutionData && (
+            {/* Conditionally render the screenshot queue if we have a result */}
+            {hasResult && (
               <div className="bg-transparent w-fit">
                 <div className="pb-3">
                   <div className="space-y-3 w-fit">
@@ -524,7 +581,7 @@ const Solutions: React.FC<SolutionsProps> = ({
               <SolutionCommands
                 // Removed dangerous handleTooltipVisibilityChange prop assignment to prevent infinite layout height loop
                 onTooltipVisibilityChange={() => { }}
-                isProcessing={!problemStatementData || !solutionData}
+                isProcessing={!problemStatementData || !hasResult}
                 extraScreenshots={extraScreenshots}
                 credits={credits}
                 currentLanguage={currentLanguage}
@@ -543,7 +600,7 @@ const Solutions: React.FC<SolutionsProps> = ({
             <div className="w-full text-sm text-zinc-100 bg-zinc-900/60 rounded-md border border-zinc-800/80">
               <div className="rounded-lg overflow-hidden">
                 <div className="px-4 py-3 space-y-4 max-w-full">
-                  {!solutionData && (
+                  {!hasResult && (
                     <>
                       <ContentSection
                         title="Problem Statement"
@@ -553,14 +610,22 @@ const Solutions: React.FC<SolutionsProps> = ({
                       {problemStatementData && (
                         <div className="mt-4 flex">
                           <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-                            Generating solutions...
+                            {isMCQ ? "Determining the correct answer..." : "Generating solutions..."}
                           </p>
                         </div>
                       )}
                     </>
                   )}
 
-                  {solutionData && (
+                  {hasResult && isMCQ && (
+                    // MCQ path: answer only, no code block or complexity section.
+                    <MCQAnswerSection
+                      answer={mcqAnswerData}
+                      isLoading={!mcqAnswerData}
+                    />
+                  )}
+
+                  {hasResult && !isMCQ && (
                     <>
                       <ContentSection
                         title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}

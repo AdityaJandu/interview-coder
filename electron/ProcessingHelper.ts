@@ -57,6 +57,32 @@ interface LoadedScreenshot {
 }
 
 /**
+ * Shape of the JSON the extraction step returns. `question_type` and
+ * `options` let us branch between three flows right after extraction,
+ * instead of always forcing every screenshot through the "write code +
+ * complexity" flow regardless of what kind of question it actually is:
+ *
+ *  - "mcq": a multiple choice / fixed-option question -> answer only,
+ *    no explanation.
+ *  - "coding": a DSA/algorithmic problem -> full solution with code,
+ *    thoughts, and time/space complexity analysis.
+ *  - "general_coding": any other coding-related question ("what does
+ *    this regex do", "why is this query slow", "explain this stack
+ *    trace", "review this function", etc) -> answer the question
+ *    directly, show code if the answer includes any, but don't force a
+ *    complexity analysis section that wouldn't make sense here.
+ */
+interface ProblemInfo {
+  problem_statement: string;
+  constraints?: string;
+  example_input?: string;
+  example_output?: string;
+  question_type?: "mcq" | "coding" | "general_coding";
+  options?: string[];
+  [key: string]: any;
+}
+
+/**
  * Pull the "Time complexity" / "Space complexity" section out of a model's
  * free-form response.
  *
@@ -555,7 +581,7 @@ export class ProcessingHelper {
         });
       }
 
-      let problemInfo;
+      let problemInfo: ProblemInfo;
 
       if (config.apiProvider === "openai") {
         // Verify OpenAI client
@@ -573,14 +599,26 @@ export class ProcessingHelper {
         // Get conversation context if available
         const conversationContext = this.getConversationContext();
 
-        // Use OpenAI for processing
+        // Use OpenAI for processing.
+        // question_type/options let us branch into one of three paths
+        // right after extraction, instead of always forcing every
+        // screenshot through the "write code + complexity" flow
+        // regardless of what kind of question it actually is.
+        const jsonFieldsInstruction = `Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
+- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
+  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
+  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
+  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
+- "options" must be an array of the answer choices as they appear (e.g. ["A) Paris", "B) London", ...]) when question_type is "mcq", otherwise an empty array.
+Just return the structured JSON without any other text.`;
+
         const systemPrompt = conversationContext
-          ? `You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Consider the conversation context provided. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text.`
-          : "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text.";
+          ? `You are an assessment interpreter. Analyze the screenshot, which may be a DSA coding problem, a general coding question, or a multiple choice / short-answer question. Extract all relevant information, considering the conversation context provided. ${jsonFieldsInstruction}`
+          : `You are an assessment interpreter. Analyze the screenshot, which may be a DSA coding problem, a general coding question, or a multiple choice / short-answer question. Extract all relevant information. ${jsonFieldsInstruction}`;
 
         const userPrompt = conversationContext
-          ? `Extract the coding problem details from these screenshots. Consider the following conversation context:\n\n${conversationContext}\n\nReturn in JSON format. Preferred coding language we gonna use for this problem is ${language}.`
-          : `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`;
+          ? `Extract the problem details from these screenshots. Consider the following conversation context:\n\n${conversationContext}\n\nReturn in JSON format. If this turns out to be a coding problem, note the preferred coding language is ${language}.`
+          : `Extract the problem details from these screenshots. Return in JSON format. If this turns out to be a coding problem, note the preferred coding language is ${language}.`;
 
         const messages = [
           {
@@ -644,9 +682,17 @@ export class ProcessingHelper {
           // Get conversation context if available
           const conversationContext = this.getConversationContext();
 
+          const jsonFieldsInstruction = `Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
+- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
+  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
+  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
+  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
+- "options" must be an array of the answer choices as they appear when question_type is "mcq", otherwise an empty array.
+Just return the structured JSON without any other text.`;
+
           const geminiPrompt = conversationContext
-            ? `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Consider the following conversation context:\n\n${conversationContext}\n\nReturn the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`
-            : `You are a coding challenge interpreter. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.`;
+            ? `You are an assessment interpreter. Analyze the screenshots, which may be a DSA coding problem, a general coding question, or a multiple choice / short-answer question. Extract all relevant information. Consider the following conversation context:\n\n${conversationContext}\n\n${jsonFieldsInstruction} If this turns out to be a coding problem, the preferred coding language is ${language}.`
+            : `You are an assessment interpreter. Analyze the screenshots, which may be a DSA coding problem, a general coding question, or a multiple choice / short-answer question. Extract all relevant information. ${jsonFieldsInstruction} If this turns out to be a coding problem, the preferred coding language is ${language}.`;
 
           // Create Gemini message structure
           const geminiMessages: GeminiMessage[] = [
@@ -709,9 +755,16 @@ export class ProcessingHelper {
           // Get conversation context if available
           const conversationContext = this.getConversationContext();
 
+          const jsonFieldsInstruction = `Return in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
+- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
+  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
+  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
+  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
+- "options" must be an array of the answer choices as they appear when question_type is "mcq", otherwise an empty array.`;
+
           const anthropicPrompt = conversationContext
-            ? `Extract the coding problem details from these screenshots. Consider the following conversation context:\n\n${conversationContext}\n\nReturn in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`
-            : `Extract the coding problem details from these screenshots. Return in JSON format with these fields: problem_statement, constraints, example_input, example_output. Preferred coding language is ${language}.`;
+            ? `Extract the problem details from these screenshots, which may show a DSA coding problem, a general coding question, or a multiple choice / short-answer question. Consider the following conversation context:\n\n${conversationContext}\n\n${jsonFieldsInstruction} If this turns out to be a coding problem, the preferred coding language is ${language}.`
+            : `Extract the problem details from these screenshots, which may show a DSA coding problem, a general coding question, or a multiple choice / short-answer question. ${jsonFieldsInstruction} If this turns out to be a coding problem, the preferred coding language is ${language}.`;
 
           const messages = [
             {
@@ -766,10 +819,29 @@ export class ProcessingHelper {
         }
       }
 
+      if (!problemInfo!) {
+        return {
+          success: false,
+          error: "Failed to extract problem information from the screenshot."
+        };
+      }
+
+      // Normalize question_type in case the model returned something
+      // unexpected (missing field, wrong casing, etc.) - default to
+      // "coding" so existing behavior is preserved unless we have clear
+      // evidence this is an MCQ or a general coding question.
+      const normalizedQuestionType = String(problemInfo.question_type || "").toLowerCase();
+      const isMCQ = normalizedQuestionType === "mcq";
+      const isGeneralCoding = normalizedQuestionType === "general_coding";
+
       // Update the user on progress
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Problem analyzed successfully. Preparing to generate solution...",
+          message: isMCQ
+            ? "Question analyzed. Determining the correct answer..."
+            : isGeneralCoding
+              ? "Question analyzed. Preparing a direct answer..."
+              : "Problem analyzed successfully. Preparing to generate solution...",
           progress: 40
         });
       }
@@ -784,15 +856,28 @@ export class ProcessingHelper {
           problemInfo
         );
 
-        // Generate solutions after successful extraction
-        const solutionsResult = await this.generateSolutionsHelper(signal);
+        // Branch based on question type:
+        //  - MCQs get a short, answer-only response.
+        //  - General coding questions get a direct answer without a
+        //    forced Code/Thoughts/Time/Space structure.
+        //  - Everything else keeps the existing full DSA solution flow.
+        const solutionsResult = isMCQ
+          ? await this.generateMCQAnswerHelper(signal)
+          : isGeneralCoding
+            ? await this.generateGeneralCodingAnswerHelper(signal)
+            : await this.generateSolutionsHelper(signal);
+
         if (solutionsResult.success) {
           // Clear any existing extra screenshots before transitioning to solutions view
           this.screenshotHelper.clearExtraScreenshotQueue();
 
           // Final progress update
           mainWindow.webContents.send("processing-status", {
-            message: "Solution generated successfully",
+            message: isMCQ
+              ? "Answer determined"
+              : isGeneralCoding
+                ? "Answer generated successfully"
+                : "Solution generated successfully",
             progress: 100
           });
 
@@ -803,7 +888,12 @@ export class ProcessingHelper {
           return { success: true, data: solutionsResult.data };
         } else {
           throw new Error(
-            solutionsResult.error || "Failed to generate solutions"
+            solutionsResult.error ||
+            (isMCQ
+              ? "Failed to determine answer"
+              : isGeneralCoding
+                ? "Failed to generate answer"
+                : "Failed to generate solutions")
           );
         }
       }
@@ -843,6 +933,417 @@ export class ProcessingHelper {
       return {
         success: false,
         error: this.formatProviderError(provider, error, "Processing screenshots")
+      };
+    }
+  }
+
+  /**
+   * MCQ path: given the already-extracted question + options, ask for
+   * ONLY the correct answer - no code, no explanation, no complexity
+   * analysis. Returns a payload shaped so it's compatible with the
+   * existing solution data contract (code/thoughts/time_complexity/
+   * space_complexity are still present but inert), plus `is_mcq` and
+   * `mcq_answer` so the renderer can show a focused answer-only view.
+   */
+  private async generateMCQAnswerHelper(signal: AbortSignal) {
+    try {
+      const problemInfo = this.deps.getProblemInfo() as ProblemInfo | null;
+      const config = configHelper.loadConfig();
+      const mainWindow = this.deps.getMainWindow();
+
+      if (!problemInfo) {
+        throw new Error("No problem info available");
+      }
+
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Determining the correct answer...",
+          progress: 70
+        });
+      }
+
+      const optionsText = Array.isArray(problemInfo.options) && problemInfo.options.length > 0
+        ? `\n\nOPTIONS:\n${problemInfo.options.join('\n')}`
+        : '';
+
+      const promptText = `This is a multiple choice question.
+
+QUESTION:
+${problemInfo.problem_statement}${optionsText}
+
+Reply with ONLY the correct option (its letter/number and text), on a single line. Do NOT include any explanation, reasoning, preamble, or extra bullets.`;
+
+      let responseContent: string | null | undefined;
+
+      if (config.apiProvider === "openai") {
+        if (!this.openaiClient) {
+          return {
+            success: false,
+            error: "OpenAI API key not configured. Please check your settings."
+          };
+        }
+
+        const response = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: "You are an assessment assistant. When given a multiple choice question, respond with ONLY the correct option and nothing else - no explanation, no reasoning."
+            },
+            { role: "user", content: promptText }
+          ],
+          max_tokens: 60,
+          temperature: 0
+        });
+
+        responseContent = response.choices[0].message.content;
+      } else if (config.apiProvider === "gemini") {
+        if (!this.geminiApiKey) {
+          return {
+            success: false,
+            error: "Gemini API key not configured. Please check your settings."
+          };
+        }
+
+        try {
+          const geminiMessages = [
+            {
+              role: "user",
+              parts: [
+                { text: promptText }
+              ]
+            }
+          ];
+
+          const response = await axios.default.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-3-flash-latest"}:generateContent?key=${this.geminiApiKey}`,
+            {
+              contents: geminiMessages,
+              generationConfig: {
+                temperature: 0,
+                maxOutputTokens: 60
+              }
+            },
+            { signal }
+          );
+
+          const responseData = response.data as GeminiResponse;
+
+          if (!responseData.candidates || responseData.candidates.length === 0) {
+            throw new Error("Empty response from Gemini API");
+          }
+
+          responseContent = responseData.candidates[0].content.parts[0].text;
+        } catch (error) {
+          console.error("Error using Gemini API for MCQ answer:", error);
+          return {
+            success: false,
+            error: this.formatProviderError("gemini", error, "MCQ answer generation")
+          };
+        }
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return {
+            success: false,
+            error: "Anthropic API key not configured. Please check your settings."
+          };
+        }
+
+        try {
+          const messages = [
+            {
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: promptText }
+              ]
+            }
+          ];
+
+          const response = await this.anthropicClient.messages.create({
+            model: config.solutionModel || "claude-3-7-sonnet-20250219",
+            max_tokens: 60,
+            messages: messages,
+            temperature: 0
+          });
+
+          responseContent = (response.content[0] as { type: 'text', text: string }).text;
+        } catch (error: any) {
+          console.error("Error using Anthropic API for MCQ answer:", error);
+
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          }
+
+          return {
+            success: false,
+            error: this.formatProviderError("anthropic", error, "MCQ answer generation")
+          };
+        }
+      }
+
+      if (!responseContent) {
+        return {
+          success: false,
+          error: "No response content received from the AI provider. Please try again."
+        };
+      }
+
+      // Collapse to a single clean line - this mode expects (and only
+      // wants) one answer, not the multi-bullet formatting used for
+      // conversational suggestions or coding solutions.
+      const answer = responseContent
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => line.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '').trim())
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const formattedResponse = {
+        code: "",
+        thoughts: [] as string[],
+        time_complexity: "N/A",
+        space_complexity: "N/A",
+        is_mcq: true,
+        mcq_answer: answer || "Unable to determine the answer from the screenshot."
+      };
+
+      return { success: true, data: formattedResponse };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return {
+          success: false,
+          error: "Processing was canceled by the user."
+        };
+      }
+
+      console.error("MCQ answer generation error:", error);
+      return {
+        success: false,
+        error: this.formatProviderError(configHelper.loadConfig().apiProvider, error, "MCQ answer generation")
+      };
+    }
+  }
+
+  /**
+   * General coding path: for coding-related questions that aren't a
+   * DSA/algorithm exercise (explain this code/regex/query, debug this
+   * error, review this function, conceptual questions, etc). Unlike
+   * `generateSolutionsHelper`, this does NOT force a Code/Thoughts/Time/
+   * Space structure - it just answers the question directly. Code is
+   * still extracted and surfaced if the answer happens to include any,
+   * but time/space complexity are left as "N/A" since they don't apply
+   * to most questions in this category.
+   */
+  private async generateGeneralCodingAnswerHelper(signal: AbortSignal) {
+    try {
+      const problemInfo = this.deps.getProblemInfo() as ProblemInfo | null;
+      const language = await this.getLanguage();
+      const config = configHelper.loadConfig();
+      const mainWindow = this.deps.getMainWindow();
+
+      if (!problemInfo) {
+        throw new Error("No problem info available");
+      }
+
+      if (mainWindow) {
+        mainWindow.webContents.send("processing-status", {
+          message: "Preparing a direct answer...",
+          progress: 60
+        });
+      }
+
+      const contextBlock = [
+        problemInfo.constraints ? `ADDITIONAL CONTEXT:\n${problemInfo.constraints}` : null,
+        problemInfo.example_input ? `EXAMPLE INPUT:\n${problemInfo.example_input}` : null,
+        problemInfo.example_output ? `EXAMPLE OUTPUT:\n${problemInfo.example_output}` : null,
+      ].filter(Boolean).join('\n\n');
+
+      const promptText = `Answer the following coding-related question directly and completely. This is NOT a DSA/algorithm problem that needs a Big-O solution - it's a general coding question (for example: explain what some code/regex/query does, why something is slow or broken, debug an error or stack trace, review or critique code, or answer a conceptual coding question).
+
+QUESTION:
+${problemInfo.problem_statement}
+${contextBlock ? `\n${contextBlock}\n` : ''}
+Answer directly - give the explanation, fix, review, or whatever the question actually needs. If relevant, include a code snippet (in ${language}, or whatever language is already shown) using a markdown code block. Do NOT include a "Time complexity" or "Space complexity" section - those don't apply here unless the question specifically asks about performance.`;
+
+      let responseContent: string | null | undefined;
+
+      if (config.apiProvider === "openai") {
+        if (!this.openaiClient) {
+          return {
+            success: false,
+            error: "OpenAI API key not configured. Please check your settings."
+          };
+        }
+
+        const response = await this.openaiClient.chat.completions.create({
+          model: config.solutionModel || "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: "You are an expert software engineer answering a general coding question - not a DSA/algorithm exercise. Answer directly and practically, without forcing a complexity analysis where it doesn't apply."
+            },
+            { role: "user", content: promptText }
+          ],
+          max_tokens: 4000,
+          temperature: 0.2
+        });
+
+        responseContent = response.choices[0].message.content;
+      } else if (config.apiProvider === "gemini") {
+        if (!this.geminiApiKey) {
+          return {
+            success: false,
+            error: "Gemini API key not configured. Please check your settings."
+          };
+        }
+
+        try {
+          const geminiMessages = [
+            {
+              role: "user",
+              parts: [
+                { text: `You are an expert software engineer answering a general coding question - not a DSA/algorithm exercise. ${promptText}` }
+              ]
+            }
+          ];
+
+          const response = await axios.default.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-3-flash-latest"}:generateContent?key=${this.geminiApiKey}`,
+            {
+              contents: geminiMessages,
+              generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 4000
+              }
+            },
+            { signal }
+          );
+
+          const responseData = response.data as GeminiResponse;
+
+          if (!responseData.candidates || responseData.candidates.length === 0) {
+            throw new Error("Empty response from Gemini API");
+          }
+
+          responseContent = responseData.candidates[0].content.parts[0].text;
+        } catch (error) {
+          console.error("Error using Gemini API for general coding answer:", error);
+          return {
+            success: false,
+            error: this.formatProviderError("gemini", error, "General coding answer generation")
+          };
+        }
+      } else if (config.apiProvider === "anthropic") {
+        if (!this.anthropicClient) {
+          return {
+            success: false,
+            error: "Anthropic API key not configured. Please check your settings."
+          };
+        }
+
+        try {
+          const messages = [
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `You are an expert software engineer answering a general coding question - not a DSA/algorithm exercise. ${promptText}`
+                }
+              ]
+            }
+          ];
+
+          const response = await this.anthropicClient.messages.create({
+            model: config.solutionModel || "claude-3-7-sonnet-20250219",
+            max_tokens: 4000,
+            messages: messages,
+            temperature: 0.2
+          });
+
+          responseContent = (response.content[0] as { type: 'text', text: string }).text;
+        } catch (error: any) {
+          console.error("Error using Anthropic API for general coding answer:", error);
+
+          if (error.status === 429) {
+            return {
+              success: false,
+              error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
+            };
+          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+            return {
+              success: false,
+              error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
+            };
+          }
+
+          return {
+            success: false,
+            error: this.formatProviderError("anthropic", error, "General coding answer generation")
+          };
+        }
+      }
+
+      if (!responseContent) {
+        return {
+          success: false,
+          error: "No response content received from the AI provider. Please try again."
+        };
+      }
+
+      // Extract a code block if the answer happens to include one - unlike
+      // the DSA path, we don't fall back to treating the whole response as
+      // "code" when there's no fenced block, since most answers here are
+      // prose (explanations, reviews, debugging notes).
+      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+      const code = codeMatch ? codeMatch[1].trim() : "";
+
+      // Break the answer into digestible chunks for the UI: prefer bullet
+      // points if the model used them, otherwise fall back to paragraphs
+      // (with any code fences stripped out, since those are already
+      // surfaced via `code`).
+      const bulletPoints = responseContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+      let thoughts: string[];
+      if (bulletPoints) {
+        thoughts = bulletPoints
+          .map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim())
+          .filter(Boolean);
+      } else {
+        thoughts = responseContent
+          .replace(/```[\s\S]*?```/g, '')
+          .split(/\n{2,}/)
+          .map(paragraph => paragraph.trim())
+          .filter(Boolean);
+      }
+
+      const formattedResponse = {
+        code,
+        thoughts: thoughts.length > 0 ? thoughts : [responseContent.trim()],
+        time_complexity: "N/A",
+        space_complexity: "N/A",
+        is_mcq: false,
+        is_general_coding: true,
+        general_analysis: responseContent
+      };
+
+      return { success: true, data: formattedResponse };
+    } catch (error: any) {
+      if (axios.isCancel(error)) {
+        return {
+          success: false,
+          error: "Processing was canceled by the user."
+        };
+      }
+
+      console.error("General coding answer generation error:", error);
+      return {
+        success: false,
+        error: this.formatProviderError(configHelper.loadConfig().apiProvider, error, "General coding answer generation")
       };
     }
   }
@@ -1098,7 +1599,8 @@ Your solution should be efficient, well-commented, and handle edge cases.
         code: code,
         thoughts: thoughts.length > 0 ? thoughts : ["Solution approach based on efficiency and readability"],
         time_complexity: timeComplexity,
-        space_complexity: spaceComplexity
+        space_complexity: spaceComplexity,
+        is_mcq: false
       };
 
       return { success: true, data: formattedResponse };
