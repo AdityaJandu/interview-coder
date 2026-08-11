@@ -12,6 +12,14 @@ import {
   APIProvider,
   DEFAULT_MODELS,
 } from "../shared/aiModels";
+import { normalizeMCQAnswer } from "../shared/textUtils";
+
+const JSON_CLASSIFICATION_GUIDANCE = `Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
+- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
+  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
+  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
+  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
+- "options" must be an array of the answer choices as they appear`;
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -79,7 +87,7 @@ interface ProblemInfo {
   example_output?: string;
   question_type?: "mcq" | "coding" | "general_coding";
   options?: string[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -581,7 +589,7 @@ export class ProcessingHelper {
         });
       }
 
-      let problemInfo: ProblemInfo;
+      let problemInfo: ProblemInfo | undefined;
 
       if (config.apiProvider === "openai") {
         // Verify OpenAI client
@@ -604,12 +612,7 @@ export class ProcessingHelper {
         // right after extraction, instead of always forcing every
         // screenshot through the "write code + complexity" flow
         // regardless of what kind of question it actually is.
-        const jsonFieldsInstruction = `Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
-- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
-  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
-  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
-  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
-- "options" must be an array of the answer choices as they appear (e.g. ["A) Paris", "B) London", ...]) when question_type is "mcq", otherwise an empty array.
+        const jsonFieldsInstruction = `${JSON_CLASSIFICATION_GUIDANCE} when question_type is "mcq", otherwise an empty array.
 Just return the structured JSON without any other text.`;
 
         const systemPrompt = conversationContext
@@ -682,12 +685,7 @@ Just return the structured JSON without any other text.`;
           // Get conversation context if available
           const conversationContext = this.getConversationContext();
 
-          const jsonFieldsInstruction = `Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
-- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
-  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
-  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
-  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
-- "options" must be an array of the answer choices as they appear when question_type is "mcq", otherwise an empty array.
+          const jsonFieldsInstruction = `${JSON_CLASSIFICATION_GUIDANCE} when question_type is "mcq", otherwise an empty array.
 Just return the structured JSON without any other text.`;
 
           const geminiPrompt = conversationContext
@@ -755,12 +753,7 @@ Just return the structured JSON without any other text.`;
           // Get conversation context if available
           const conversationContext = this.getConversationContext();
 
-          const jsonFieldsInstruction = `Return in JSON format with these fields: problem_statement, constraints, example_input, example_output, question_type, options.
-- "question_type" must be exactly one of: "mcq", "coding", or "general_coding".
-  - "mcq": a multiple choice question, or any question with a fixed set of selectable answers.
-  - "coding": a DSA/algorithmic coding problem (e.g. LeetCode-style) that expects a full solution with time/space complexity analysis.
-  - "general_coding": any other coding-related question that is NOT a DSA/algorithm exercise - e.g. "what does this regex/code/query do", "why is this slow/broken", explaining an error or stack trace, reviewing or critiquing code, a conceptual coding question, etc. Complexity analysis does not apply here.
-- "options" must be an array of the answer choices as they appear when question_type is "mcq", otherwise an empty array.`;
+          const jsonFieldsInstruction = `${JSON_CLASSIFICATION_GUIDANCE} when question_type is "mcq", otherwise an empty array.`;
 
           const anthropicPrompt = conversationContext
             ? `Extract the problem details from these screenshots, which may show a DSA coding problem, a general coding question, or a multiple choice / short-answer question. Consider the following conversation context:\n\n${conversationContext}\n\n${jsonFieldsInstruction} If this turns out to be a coding problem, the preferred coding language is ${language}.`
@@ -819,7 +812,7 @@ Just return the structured JSON without any other text.`;
         }
       }
 
-      if (!problemInfo!) {
+      if (!problemInfo) {
         return {
           success: false,
           error: "Failed to extract problem information from the screenshot."
@@ -830,7 +823,7 @@ Just return the structured JSON without any other text.`;
       // unexpected (missing field, wrong casing, etc.) - default to
       // "coding" so existing behavior is preserved unless we have clear
       // evidence this is an MCQ or a general coding question.
-      const normalizedQuestionType = String(problemInfo.question_type || "").toLowerCase();
+      const normalizedQuestionType = String(problemInfo.question_type || "").toLowerCase().trim();
       const isMCQ = normalizedQuestionType === "mcq";
       const isGeneralCoding = normalizedQuestionType === "general_coding";
 
@@ -994,7 +987,7 @@ Reply with ONLY the correct option (its letter/number and text), on a single lin
           ],
           max_tokens: 60,
           temperature: 0
-        });
+        }, { signal });
 
         responseContent = response.choices[0].message.content;
       } else if (config.apiProvider === "gemini") {
@@ -1064,13 +1057,13 @@ Reply with ONLY the correct option (its letter/number and text), on a single lin
             max_tokens: 60,
             messages: messages,
             temperature: 0
-          });
+          }, { signal });
 
           responseContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error("Error using Anthropic API for MCQ answer:", error);
-
-          if (error.status === 429) {
+          const err = error as any;
+          if (err.status === 429) {
             return {
               success: false,
               error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
@@ -1079,7 +1072,7 @@ Reply with ONLY the correct option (its letter/number and text), on a single lin
 
           return {
             success: false,
-            error: this.formatProviderError("anthropic", error, "MCQ answer generation")
+            error: this.formatProviderError("anthropic", err, "MCQ answer generation")
           };
         }
       }
@@ -1094,14 +1087,7 @@ Reply with ONLY the correct option (its letter/number and text), on a single lin
       // Collapse to a single clean line - this mode expects (and only
       // wants) one answer, not the multi-bullet formatting used for
       // conversational suggestions or coding solutions.
-      const answer = responseContent
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-        .map(line => line.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '').trim())
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const answer = normalizeMCQAnswer(responseContent)[0] || "";
 
       const formattedResponse = {
         code: "",
@@ -1113,7 +1099,7 @@ Reply with ONLY the correct option (its letter/number and text), on a single lin
       };
 
       return { success: true, data: formattedResponse };
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (axios.isCancel(error)) {
         return {
           success: false,
@@ -1267,15 +1253,15 @@ Answer directly - give the explanation, fix, review, or whatever the question ac
           });
 
           responseContent = (response.content[0] as { type: 'text', text: string }).text;
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error("Error using Anthropic API for general coding answer:", error);
-
-          if (error.status === 429) {
+          const err = error as any;
+          if (err.status === 429) {
             return {
               success: false,
               error: "Claude API rate limit exceeded. Please wait a few minutes before trying again."
             };
-          } else if (error.status === 413 || (error.message && error.message.includes("token"))) {
+          } else if (err.status === 413 || (err.message && err.message.includes("token"))) {
             return {
               success: false,
               error: "Your screenshots contain too much information for Claude to process. Switch to OpenAI or Gemini in settings which can handle larger inputs."
@@ -1284,7 +1270,7 @@ Answer directly - give the explanation, fix, review, or whatever the question ac
 
           return {
             success: false,
-            error: this.formatProviderError("anthropic", error, "General coding answer generation")
+            error: this.formatProviderError("anthropic", err, "General coding answer generation")
           };
         }
       }
@@ -1303,19 +1289,20 @@ Answer directly - give the explanation, fix, review, or whatever the question ac
       const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
       const code = codeMatch ? codeMatch[1].trim() : "";
 
+      const proseOnly = responseContent.replace(/```[\s\S]*?```/g, '');
+
       // Break the answer into digestible chunks for the UI: prefer bullet
       // points if the model used them, otherwise fall back to paragraphs
       // (with any code fences stripped out, since those are already
       // surfaced via `code`).
-      const bulletPoints = responseContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+      const bulletPoints = proseOnly.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
       let thoughts: string[];
       if (bulletPoints) {
         thoughts = bulletPoints
           .map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim())
           .filter(Boolean);
       } else {
-        thoughts = responseContent
-          .replace(/```[\s\S]*?```/g, '')
+        thoughts = proseOnly
           .split(/\n{2,}/)
           .map(paragraph => paragraph.trim())
           .filter(Boolean);
@@ -1323,7 +1310,7 @@ Answer directly - give the explanation, fix, review, or whatever the question ac
 
       const formattedResponse = {
         code,
-        thoughts: thoughts.length > 0 ? thoughts : [responseContent.trim()],
+        thoughts: thoughts.length > 0 ? thoughts : [proseOnly.trim()],
         time_complexity: "N/A",
         space_complexity: "N/A",
         is_mcq: false,
@@ -1332,7 +1319,7 @@ Answer directly - give the explanation, fix, review, or whatever the question ac
       };
 
       return { success: true, data: formattedResponse };
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (axios.isCancel(error)) {
         return {
           success: false,

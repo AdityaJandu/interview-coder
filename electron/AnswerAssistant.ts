@@ -12,6 +12,7 @@ import {
   APIProvider,
   DEFAULT_ANSWER_MODELS,
 } from "../shared/aiModels";
+import { normalizeMCQAnswer } from "../shared/textUtils";
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -127,7 +128,7 @@ export class AnswerAssistant implements IAnswerAssistant {
     const previousAnswers = conversationManager.getIntervieweeAnswers();
 
     // Get candidate profile from config if not provided
-    const profile = candidateProfile || configHelper.loadConfig().candidateProfile;
+    const profile = candidateProfile || config.candidateProfile;
 
     // Decide which mode we're in up front, since it changes both the prompt
     // and how we should interpret/format the model's reply.
@@ -254,17 +255,18 @@ export class AnswerAssistant implements IAnswerAssistant {
           : 'Based on provided context and assessment requirements.',
         mode: isMCQ ? 'mcq' : 'conversational',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating suggestions:', error);
 
-      const status = error?.status ?? error?.response?.status;
+      const err = error as any;
+      const status = err?.status ?? err?.response?.status;
       if (status === 401) {
-        throw new Error(this.formatProviderError(config.apiProvider, error, "Auth"));
+        throw new Error(this.formatProviderError(config.apiProvider, err, "Auth"));
       } else if (status === 429) {
-        throw new Error(this.formatProviderError(config.apiProvider, error, "Rate limit"));
+        throw new Error(this.formatProviderError(config.apiProvider, err, "Rate limit"));
       }
 
-      throw new Error(this.formatProviderError(config.apiProvider, error, "Answer suggestion generation"));
+      throw new Error(this.formatProviderError(config.apiProvider, err, "Answer suggestion generation"));
     }
   }
 
@@ -283,7 +285,7 @@ export class AnswerAssistant implements IAnswerAssistant {
     const text = screenshotContext;
 
     // Look for at least 2 option-style lines, e.g. "A)", "A.", "(A)", "1)", "1."
-    const optionLinePattern = /(^|\n)\s*[\(\[]?[A-Da-d1-4][\)\.\]]\s+.+/g;
+    const optionLinePattern = /(^|\n)\s*[([]?[A-Da-d1-4][).\]]\s+.+/g;
     const optionMatches = text.match(optionLinePattern) || [];
 
     // Common MCQ phrasing cues
@@ -297,7 +299,7 @@ export class AnswerAssistant implements IAnswerAssistant {
     ];
     const hasPhraseCue = phraseCues.some(re => re.test(text));
 
-    return optionMatches.length >= 2 || (optionMatches.length >= 1 && hasPhraseCue) || hasPhraseCue;
+    return optionMatches.length >= 2 || (optionMatches.length >= 1 && hasPhraseCue);
   }
 
   /**
@@ -354,7 +356,7 @@ export class AnswerAssistant implements IAnswerAssistant {
       prompt += `INSTRUCTIONS:
 This is a multiple choice question. Reply with ONLY the correct option (letter/number and text), on a single line.
 Do NOT include any explanation, reasoning, preamble, or extra bullets.
-Example of the ONLY acceptable format: "- B) Paris"`;
+Example of the ONLY acceptable format: "B) Paris"`;
     } else {
       // MODE 2: Conversational - existing multi-suggestion behavior.
       prompt += `INSTRUCTIONS:
@@ -397,16 +399,7 @@ Keep the points actionable and easy to read quickly.`;
    * in this mode we expect (and only want) one answer, not multiple bullets.
    */
   private parseMCQAnswer(answerText: string): string[] {
-    const cleaned = answerText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => line.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '').trim())
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    return cleaned.length > 0 ? [cleaned] : [];
+    return normalizeMCQAnswer(answerText);
   }
 
   /**
@@ -455,7 +448,8 @@ Keep the points actionable and easy to read quickly.`;
 
     return suggestions
       .map(s => s.trim())
-      .filter(s => s.length > 0 && s.length < 500)
+      .filter(s => s.length > 0)
+      .map(s => s.length > 500 ? s.slice(0, 500) : s)
       .map(s => s.replace(/\s+/g, ' ').trim());
   }
 

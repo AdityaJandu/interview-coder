@@ -229,6 +229,8 @@ interface SolutionSuccessData {
   space_complexity: string
   is_mcq?: boolean
   mcq_answer?: string
+  is_general_coding?: boolean
+  general_analysis?: string
 }
 
 const Solutions: React.FC<SolutionsProps> = ({
@@ -256,6 +258,8 @@ const Solutions: React.FC<SolutionsProps> = ({
   // as code elsewhere, e.g. passed straight into the syntax highlighter).
   const [isMCQ, setIsMCQ] = useState(false)
   const [mcqAnswerData, setMcqAnswerData] = useState<string | null>(null)
+  const [isGeneralCoding, setIsGeneralCoding] = useState(false)
+  const [generalAnalysisData, setGeneralAnalysisData] = useState<string | null>(null)
 
   const [isResetting, setIsResetting] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -384,6 +388,8 @@ const Solutions: React.FC<SolutionsProps> = ({
         setSpaceComplexityData(null)
         setIsMCQ(false)
         setMcqAnswerData(null)
+        setIsGeneralCoding(false)
+        setGeneralAnalysisData(null)
       }),
       window.electronAPI.onProblemExtracted((data: ProblemStatementData) => {
         queryClient.setQueryData(["problem_statement"], data)
@@ -402,6 +408,8 @@ const Solutions: React.FC<SolutionsProps> = ({
         setSpaceComplexityData(solution?.space_complexity || null)
         setIsMCQ(solution?.is_mcq || false)
         setMcqAnswerData(solution?.mcq_answer || null)
+        setIsGeneralCoding(solution?.is_general_coding || false)
+        setGeneralAnalysisData(solution?.general_analysis || null)
         console.error("Processing error:", error)
       }),
       //when the initial solution is generated, we'll set the solution data to that
@@ -411,14 +419,7 @@ const Solutions: React.FC<SolutionsProps> = ({
           return
         }
         console.log({ data })
-        const solutionData: SolutionSuccessData = {
-          code: data.code,
-          thoughts: data.thoughts,
-          time_complexity: data.time_complexity,
-          space_complexity: data.space_complexity,
-          is_mcq: data.is_mcq,
-          mcq_answer: data.mcq_answer
-        }
+        const solutionData: SolutionSuccessData = { ...data }
 
         queryClient.setQueryData(["solution"], solutionData)
         setSolutionData(solutionData.code || null)
@@ -427,6 +428,8 @@ const Solutions: React.FC<SolutionsProps> = ({
         setSpaceComplexityData(solutionData.space_complexity || null)
         setIsMCQ(solutionData.is_mcq || false)
         setMcqAnswerData(solutionData.mcq_answer || null)
+        setIsGeneralCoding(solutionData.is_general_coding || false)
+        setGeneralAnalysisData(solutionData.general_analysis || null)
 
         // Fetch latest screenshots when solution is successful
         const fetchScreenshots = async () => {
@@ -490,8 +493,13 @@ const Solutions: React.FC<SolutionsProps> = ({
     )
     const cachedSolution = queryClient.getQueryData(["solution"]) as SolutionSuccessData | null
     setSolutionData(cachedSolution?.code ?? null)
+    setThoughtsData(cachedSolution?.thoughts ?? null)
+    setTimeComplexityData(cachedSolution?.time_complexity ?? null)
+    setSpaceComplexityData(cachedSolution?.space_complexity ?? null)
     setIsMCQ(cachedSolution?.is_mcq || false)
     setMcqAnswerData(cachedSolution?.mcq_answer || null)
+    setIsGeneralCoding(cachedSolution?.is_general_coding || false)
+    setGeneralAnalysisData(cachedSolution?.general_analysis || null)
 
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       if (event?.query.queryKey[0] === "problem_statement") {
@@ -508,6 +516,8 @@ const Solutions: React.FC<SolutionsProps> = ({
         setSpaceComplexityData(solution?.space_complexity ?? null)
         setIsMCQ(solution?.is_mcq || false)
         setMcqAnswerData(solution?.mcq_answer || null)
+        setIsGeneralCoding(solution?.is_general_coding || false)
+        setGeneralAnalysisData(solution?.general_analysis || null)
       }
     })
     return () => unsubscribe()
@@ -545,9 +555,9 @@ const Solutions: React.FC<SolutionsProps> = ({
   }
 
   // For the MCQ path, "has a result" means we have an answer string rather
-  // than code - `solutionData` (code) stays empty in that case, so use it
-  // to decide whether we're still loading vs. done.
-  const hasResult = isMCQ ? !!mcqAnswerData : !!solutionData
+  // than code. For general coding, we look for general analysis.
+  // `solutionData` (code) might be empty in those cases.
+  const hasResult = isMCQ ? !!mcqAnswerData : (isGeneralCoding ? !!generalAnalysisData : !!solutionData)
 
   return (
     <>
@@ -625,7 +635,15 @@ const Solutions: React.FC<SolutionsProps> = ({
                     />
                   )}
 
-                  {hasResult && !isMCQ && (
+                  {hasResult && isGeneralCoding && (
+                    <ContentSection
+                      title="Answer"
+                      content={generalAnalysisData}
+                      isLoading={!generalAnalysisData}
+                    />
+                  )}
+
+                  {hasResult && !isMCQ && !isGeneralCoding && (
                     <>
                       <ContentSection
                         title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
