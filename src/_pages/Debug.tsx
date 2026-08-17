@@ -7,10 +7,15 @@ const SyntaxHighlighter = lazy(() =>
     default: module.Prism
   }))
 )
+// Static import of the VS Code Dark+ theme — matches VS Code's actual color
+// scheme. Importing it directly (instead of require()'ing it inside
+// customStyle) avoids relying on CommonJS require at runtime, which isn't
+// reliably available under Vite/ESM bundling.
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
-import SolutionCommands from "../components/Solutions/SolutionCommands"
+
 import { Screenshot } from "../types/screenshots"
-import { ComplexitySection, ContentSection } from "./Solutions"
+import { ComplexitySection, ContentSection } from "../components/shared/SolutionComponents"
 import { useToast } from "../contexts/toast"
 import { MarkdownRenderer } from "../components/MarkdownRenderer"
 
@@ -60,16 +65,7 @@ const CodeSection = ({
               <SyntaxHighlighter
                 showLineNumbers
                 language={currentLanguage == "golang" ? "go" : currentLanguage}
-                style={(() => {
-                  // Dynamically import style to reduce initial bundle size
-                  // This will be code-split by Vite
-                  try {
-                    const styleModule = require("react-syntax-highlighter/dist/esm/styles/prism")
-                    return styleModule.oneDark || styleModule.dracula || {}
-                  } catch {
-                    return {}
-                  }
-                })()}
+                style={vscDarkPlus}
                 customStyle={{
                   maxWidth: "100%",
                   margin: 0,
@@ -316,7 +312,7 @@ const Debug: React.FC<DebugProps> = ({
         </div>
 
         {/* Navbar of commands with the tooltip */}
-        <SolutionCommands
+        {/* <SolutionCommands
           screenshots={screenshots}
           onTooltipVisibilityChange={handleTooltipVisibilityChange}
           isProcessing={isProcessing}
@@ -324,7 +320,7 @@ const Debug: React.FC<DebugProps> = ({
           credits={window.__CREDITS__}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
-        />
+        /> */}
 
         {/* Main Content */}
         <div className="w-full text-sm text-black bg-zinc-900/60 rounded-md border border-zinc-800/80">

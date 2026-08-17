@@ -45,6 +45,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
   useEffect(() => {
     if (externalOpen !== undefined) {
       setOpen(externalOpen);
+
+      // Force window resize for Settings Dialog when opened externally
+      if (externalOpen) {
+        setTimeout(() => {
+          const maxWidth = Math.floor((window.screen.availWidth || 1920) * 0.8);
+          const maxHeight = Math.floor((window.screen.availHeight || 1080) * 0.9);
+          window.electronAPI?.updateContentDimensions({
+            width: Math.min(1200, maxWidth),
+            height: Math.min(900, maxHeight)
+          });
+        }, 50);
+      }
     }
   }, [externalOpen]);
 
@@ -53,6 +65,18 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     setOpen(newOpen);
     if (onOpenChange && newOpen !== externalOpen) {
       onOpenChange(newOpen);
+    }
+
+    // Force window resize for Settings Dialog
+    if (newOpen) {
+      setTimeout(() => {
+        const maxWidth = Math.floor((window.screen.availWidth || 1920) * 0.8);
+        const maxHeight = Math.floor((window.screen.availHeight || 1080) * 0.9);
+        window.electronAPI?.updateContentDimensions({
+          width: Math.min(1200, maxWidth),
+          height: Math.min(900, maxHeight)
+        });
+      }, 50);
     }
   }, [externalOpen, onOpenChange]);
 
@@ -184,7 +208,11 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-[9999] bg-zinc-950/95 backdrop-blur-md flex flex-col p-6 sm:p-8 transition-all duration-300 ${open ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"
+      // isolate creates a new stacking context so nothing inside this dialog
+      // can be out-ranked by a descendant's z-index, and z-[2147483647]
+      // (max 32-bit int) guarantees this portal wins over every other
+      // fixed/absolute-positioned element mounted on document.body.
+      className={`fixed inset-0 z-[2147483647] isolate bg-zinc-950/95 backdrop-blur-md overflow-y-auto p-6 sm:p-8 transition-all duration-300 ${open ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"
         }`}
     >
       {/* Top Bar Header */}
@@ -205,7 +233,7 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
       </div>
 
       {/* Main Content Area - 2 Column Grid */}
-      <div className="flex-1 overflow-y-auto my-6 pr-2 max-w-7xl w-full mx-auto">
+      <div className="my-6 pr-2 max-w-7xl w-full mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
           {/* LEFT COLUMN: Provider, Keys, Shortcuts */}
@@ -225,8 +253,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               <div className="grid grid-cols-3 gap-3">
                 <div
                   className={`p-3 rounded-lg cursor-pointer transition-all ${apiProvider === "openai"
-                      ? "bg-white/10 border-2 border-white/40 shadow-lg"
-                      : "bg-black/40 border border-white/10 hover:bg-white/5"
+                    ? "bg-white/10 border-2 border-white/40 shadow-lg"
+                    : "bg-black/40 border border-white/10 hover:bg-white/5"
                     }`}
                   onClick={() => handleProviderChange("openai")}
                 >
@@ -244,8 +272,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
 
                 <div
                   className={`p-3 rounded-lg cursor-pointer transition-all ${apiProvider === "gemini"
-                      ? "bg-white/10 border-2 border-white/40 shadow-lg"
-                      : "bg-black/40 border border-white/10 hover:bg-white/5"
+                    ? "bg-white/10 border-2 border-white/40 shadow-lg"
+                    : "bg-black/40 border border-white/10 hover:bg-white/5"
                     }`}
                   onClick={() => handleProviderChange("gemini")}
                 >
@@ -263,8 +291,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
 
                 <div
                   className={`p-3 rounded-lg cursor-pointer transition-all ${apiProvider === "anthropic"
-                      ? "bg-white/10 border-2 border-white/40 shadow-lg"
-                      : "bg-black/40 border border-white/10 hover:bg-white/5"
+                    ? "bg-white/10 border-2 border-white/40 shadow-lg"
+                    : "bg-black/40 border border-white/10 hover:bg-white/5"
                     }`}
                   onClick={() => handleProviderChange("anthropic")}
                 >
@@ -445,8 +473,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                             <div
                               key={m.id}
                               className={`p-2.5 rounded-lg cursor-pointer transition-colors ${currentValue === m.id
-                                  ? "bg-white/10 border border-white/30"
-                                  : "bg-black/30 border border-white/5 hover:bg-white/5"
+                                ? "bg-white/10 border border-white/30"
+                                : "bg-black/30 border border-white/5 hover:bg-white/5"
                                 }`}
                               onClick={() => setValue(m.id)}
                             >
@@ -482,8 +510,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
               {apiProvider === "openai" ? (
                 <div
                   className={`p-3 rounded-lg cursor-pointer transition-colors ${speechRecognitionModel === "whisper-1"
-                      ? "bg-white/10 border border-white/30"
-                      : "bg-black/30 border border-white/5 hover:bg-white/5"
+                    ? "bg-white/10 border border-white/30"
+                    : "bg-black/30 border border-white/5 hover:bg-white/5"
                     }`}
                   onClick={() => setSpeechRecognitionModel("whisper-1")}
                 >
@@ -505,8 +533,8 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
                       <div
                         key={modelId}
                         className={`p-2.5 rounded-lg cursor-pointer transition-colors ${speechRecognitionModel === modelId
-                            ? "bg-white/10 border border-white/30"
-                            : "bg-black/30 border border-white/5 hover:bg-white/5"
+                          ? "bg-white/10 border border-white/30"
+                          : "bg-black/30 border border-white/5 hover:bg-white/5"
                           }`}
                         onClick={() => setSpeechRecognitionModel(modelId)}
                       >
