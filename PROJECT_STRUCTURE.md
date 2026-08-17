@@ -311,7 +311,7 @@ sequenceDiagram
     Main->>Bridge: send("initial-start")
     Bridge->>UI: onSolutionStart → show loading
 
-    rect rgb(30, 40, 60)
+    rect rgb(200, 220, 245)
         Note over Main,AI: Phase 1 — Vision Extraction
         Main->>Main: Gather screenshot paths from queue
         Main->>AI: Extraction model + screenshot images
@@ -320,7 +320,7 @@ sequenceDiagram
         Bridge->>UI: Display problem statement
     end
 
-    rect rgb(20, 50, 40)
+    rect rgb(200, 240, 220)
         Note over Main,AI: Phase 2 — Solution Generation
         alt MCQ Question
             Main->>AI: MCQ answer prompt
